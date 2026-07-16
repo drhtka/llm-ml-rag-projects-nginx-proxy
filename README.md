@@ -1,27 +1,51 @@
 # nginx_proxy
 
-Минимальный `Nginx` reverse proxy для Docker-сети `proxy_net`, который маршрутизирует внешние домены на внутренние Docker-сервисы проектов.
+Minimal `Nginx` reverse proxy for the shared Docker network `proxy_net`.
 
-## Что делает
+This repository acts as the public entry layer for multiple portfolio services and routes incoming traffic to the correct internal containers by hostname.
 
-- принимает входящий HTTP-трафик на `80`
-- маршрутизирует домены на внутренние Docker-сервисы
-- не публикует backend-контейнеры наружу
-- использует Docker DNS resolver, чтобы не падать при смене IP контейнеров
+## Quick Links
 
-## Маршрутизация
+- [Overview](#overview)
+- [Routing Map](#routing-map)
+- [Production URLs](#production-urls)
+- [Architecture](#architecture)
+- [Nginx Behavior](#nginx-behavior)
+- [Repository Contents](#repository-contents)
+- [Run](#run)
+- [Health Checks](#health-checks)
+
+## Overview
+
+This proxy is responsible for:
+
+- accepting public HTTP traffic on port `80`;
+- routing requests to internal Docker services inside `proxy_net`;
+- keeping backend containers private and non-published;
+- resolving containers through Docker DNS so service recreation does not require hard-coded IPs.
+
+## Routing Map
 
 - `antifraud.pp.ua` -> `antifraud_app:8000`
 - `fsprojects.pp.ua` -> `fsprojects_app:8000`
 - `assistant.fsprojects.pp.ua` -> `assistant_app:8000`
 
-## Боевые URL
+## Production URLs
 
 - `https://antifraud.pp.ua/`
 - `https://fsprojects.pp.ua/`
 - `https://assistant.fsprojects.pp.ua/`
 
-## Архитектура
+## Architecture
+
+```mermaid
+flowchart LR
+    A[Internet / Cloudflare] --> B[nginx_proxy :80]
+    B --> C{Docker network<br/>proxy_net}
+    C --> D[antifraud_app:8000]
+    C --> E[fsprojects_app:8000]
+    C --> F[assistant_app:8000]
+```
 
 ```text
 Internet / Cloudflare
@@ -41,17 +65,17 @@ Internet / Cloudflare
            `- assistant_app:8000
 ```
 
-## Архитектура Nginx
+## Nginx Behavior
 
-`nginx_proxy` сам не хранит бизнес-логику и не обслуживает приложение напрямую. Он делает только edge-routing:
+`nginx_proxy` does not contain application logic. It acts strictly as the edge routing layer:
 
-1. принимает запрос от Cloudflare или напрямую снаружи;
-2. смотрит на `Host`;
-3. выбирает нужный upstream внутри `proxy_net`;
-4. пробрасывает заголовки `Host`, `X-Forwarded-*`, `Upgrade`, `Connection`;
-5. отдаёт ответ клиенту от соответствующего backend-сервиса.
+1. receives the public request from Cloudflare or a direct client;
+2. inspects the `Host` header;
+3. selects the matching upstream inside `proxy_net`;
+4. forwards the original host and `X-Forwarded-*` headers;
+5. returns the upstream response to the client.
 
-По сути схема такая:
+Runtime request path:
 
 ```text
 Client
@@ -62,28 +86,28 @@ Client
       -> assistant_app
 ```
 
-`nginx.conf` использует:
+The main config relies on:
 
 - `resolver 127.0.0.11 valid=10s ipv6=off;`
 - `proxy_pass http://$upstream;`
 
-Это позволяет:
+That setup helps with three production concerns:
 
-- не привязываться к старому IP контейнера после recreate
-- не ронять весь proxy из-за статического upstream resolution на старте
-- держать `ai_knowledge_assistant`, `fsprojects` и `antifraud` развязанными друг от друга на уровне запуска proxy
+- it avoids stale container IP assumptions after recreate or restart;
+- it prevents the proxy from being tightly coupled to one fixed upstream address;
+- it keeps `antifraud`, `fsprojects`, and `ai_knowledge_assistant` independently routable behind the same edge service.
 
-## Состав
+## Repository Contents
 
-- [`docker-compose.yml`](file:///Users/drhtka/Downloads/Projects/Llm_ml_RAG/nginx_proxy/docker-compose.yml) - контейнер `nginx`
-- [`nginx.conf`](file:///Users/drhtka/Downloads/Projects/Llm_ml_RAG/nginx_proxy/nginx.conf) - домены и proxy rules
-- [`instruction.md`](file:///Users/drhtka/Downloads/Projects/Llm_ml_RAG/nginx_proxy/instruction.md) - быстрые команды для запуска и дебага
+- [`docker-compose.yml`](file:///Users/drhtka/Downloads/Projects/Llm_ml_RAG/nginx_proxy/docker-compose.yml) - launches the `nginx` container
+- [`nginx.conf`](file:///Users/drhtka/Downloads/Projects/Llm_ml_RAG/nginx_proxy/nginx.conf) - host-based routing and proxy rules
+- [`instruction.md`](file:///Users/drhtka/Downloads/Projects/Llm_ml_RAG/nginx_proxy/instruction.md) - deployment and debugging notes
 
-Связанный backend-проект:
+Related backend project:
 
 - [`ai_knowledge_assistant`](file:///Users/drhtka/Downloads/Projects/Llm_ml_RAG/ai_knowledge_assistant)
 
-## Запуск
+## Run
 
 ```bash
 docker network create proxy_net
@@ -91,7 +115,7 @@ cd /home/drhtka/projects/nginx_proxy
 docker compose up -d
 ```
 
-## Проверка
+## Health Checks
 
 ```bash
 docker compose ps
