@@ -31,7 +31,7 @@ jobs:
         run: |
           ssh -i ~/.ssh/fsprojects-nginx-github -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" << 'EOF'
           set -euo pipefail
-          docker network inspect proxy_net >/dev/null 2>&1 || sudo docker network create proxy_net
+          sudo docker network inspect proxy_net >/dev/null 2>&1 || sudo docker network create proxy_net
           git config --global --add safe.directory /home/drhtka/projects/nginx_proxy || true
           cd /home/drhtka/projects/nginx_proxy
           git fetch origin
