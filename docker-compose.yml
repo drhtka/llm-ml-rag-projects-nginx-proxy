@@ -12,4 +12,4 @@ services:
 
 networks:
   proxy_net:
-    external: true
+    name: proxy_net
